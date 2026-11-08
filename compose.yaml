@@ -1,0 +1,11 @@
+services:
+  lumen:
+    build: .
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - lumen-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  lumen-data:
