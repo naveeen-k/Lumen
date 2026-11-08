@@ -13,5 +13,4 @@ COPY web ./web
 USER lumen
 ENV PORT=8080
 EXPOSE 8080
-VOLUME ["/app/data"]
 CMD ["java", "-cp", "classes", "Main"]
