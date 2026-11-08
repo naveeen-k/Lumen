@@ -101,6 +101,10 @@ public final class App implements HttpHandler {
                 result = store.search(query(ex).getOrDefault("q", ""), me);
             } else if (route(m, p, "GET", "users", "*")) {
                 result = store.profile(p[1], me);
+            } else if (route(m, p, "GET", "users", "*", "followers")) {
+                result = store.connections(p[1], me, true);
+            } else if (route(m, p, "GET", "users", "*", "following")) {
+                result = store.connections(p[1], me, false);
             } else if (route(m, p, "POST", "users", "*", "follow")) {
                 result = store.follow(p[1], me, true);
             } else if (route(m, p, "DELETE", "users", "*", "follow")) {
