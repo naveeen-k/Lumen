@@ -109,6 +109,12 @@ public final class App implements HttpHandler {
                 result = store.follow(p[1], me, true);
             } else if (route(m, p, "DELETE", "users", "*", "follow")) {
                 result = store.follow(p[1], me, false);
+            } else if (route(m, p, "GET", "notifications")) {
+                result = store.notifications(me);
+            } else if (route(m, p, "GET", "notifications", "unread")) {
+                result = store.unreadNotifications(me);
+            } else if (route(m, p, "POST", "notifications", "read")) {
+                result = store.markNotificationsRead(me);
             } else if (route(m, p, "POST", "posts")) {
                 result = createPost(ex, me);
             } else if (route(m, p, "GET", "posts", "*")) {

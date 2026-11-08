@@ -53,6 +53,7 @@ const ICONS = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 15 6 10z"/><path d="M10 20a2.2 2.2 0 0 0 4 0"/></svg>',
   user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" stroke-linecap="round"/></svg>',
   heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-9.3-9.2C1.4 7.4 3.6 4 7 4c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.4 4.3 6.8C19.5 15.4 12 20 12 20z"/></svg>',
   comment: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3 21l1.6-5.1A8.5 8.5 0 1 1 21 12z"/></svg>',
@@ -114,6 +115,7 @@ const routes = [
   [/^#\/?$/, renderFeed, 'feed'],
   [/^#\/explore$/, renderExplore, 'explore'],
   [/^#\/new$/, renderNew, 'new'],
+  [/^#\/activity$/, renderActivity, 'activity'],
   [/^#\/me$/, () => { location.replace(`#/u/${state.me.name}`); }, 'me'],
   [/^#\/u\/([a-z0-9_.]+)$/, renderProfile, 'me'],
   [/^#\/u\/([a-z0-9_.]+)\/(followers|following)$/, renderConnections, 'me'],
@@ -131,6 +133,7 @@ async function router() {
     try { state.me = await api('me'); } catch { return; }
   }
   tabbar.hidden = false;
+  refreshUnread();
 
   const hash = location.hash || '#/';
   for (const [re, render, tab] of routes) {
@@ -504,6 +507,51 @@ async function renderPost(id) {
   mount(postCard(p, { full: true }));
 }
 
+// ---------- notifications ----------
+
+function setUnread(count) {
+  const badge = document.getElementById('unread');
+  badge.hidden = !count;
+  badge.textContent = count > 99 ? '99+' : count;
+}
+
+async function refreshUnread() {
+  if (!state.token) return;
+  try {
+    setUnread((await api('notifications/unread')).count);
+  } catch { /* the badge can wait for the next check */ }
+}
+
+function activityRow(n) {
+  const target = n.postId ? `#/p/${n.postId}` : `#/u/${n.actor}`;
+  const message = { follow: 'started following you', like: 'liked your photo', comment: `commented: ${n.text}` }[n.type];
+  return h('div', { class: 'person' + (n.read ? '' : ' unseen') },
+    avatar(n.actor),
+    h('a', { href: target, class: 'meta' },
+      h('div', { class: 'activity-text' }, h('span', { class: 'name' }, n.actor), ' ', message),
+      h('div', { class: 'muted small' }, timeAgo(n.at))),
+    n.image ? h('a', { href: target }, h('img', { src: n.image, alt: '', class: 'thumb', loading: 'lazy' })) : null);
+}
+
+async function renderActivity() {
+  const seq = ++renderSeq;
+  loading();
+  const items = await api('notifications');
+  if (seq !== renderSeq) return;
+  mount(
+    h('div', { class: 'list-head' }, h('h2', null, 'Notifications')),
+    items.length ? h('div', { class: 'people' }, items.map(activityRow)) : h('div', { class: 'empty' },
+      h('h2', null, 'No notifications yet'),
+      h('p', { class: 'muted' }, 'Follows, likes and comments will show up here.')),
+  );
+  if (items.some((n) => !n.read)) {
+    try {
+      await api('notifications/read', { method: 'POST' });
+      setUnread(0);
+    } catch { /* they stay unread until next time */ }
+  }
+}
+
 // ---------- new post ----------
 
 /** Downscales to at most 1440px on the long edge and re-encodes as JPEG, so uploads stay small. */
@@ -571,7 +619,8 @@ function renderNew() {
 // ---------- boot ----------
 
 for (const a of document.querySelectorAll('#tabbar a')) {
-  a.append(icon({ feed: 'home', explore: 'search', new: 'plus', me: 'user' }[a.dataset.tab]));
+  a.append(icon({ feed: 'home', explore: 'search', new: 'plus', activity: 'bell', me: 'user' }[a.dataset.tab]));
 }
+setInterval(() => { if (!document.hidden) refreshUnread(); }, 30000);
 window.addEventListener('hashchange', router);
 router();

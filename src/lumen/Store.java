@@ -23,6 +23,8 @@ final class Store implements Serializable {
     private static final Pattern USERNAME = Pattern.compile("[a-z0-9_.]{3,20}");
     private static final int PAGE_SIZE = 20;
     private static final int EXPLORE_SIZE = 60;
+    private static final int MAX_NOTIFICATIONS = 100;
+    private static final long NO_POST = 0;
 
     static final class User implements Serializable {
         private static final long serialVersionUID = 1L;
@@ -71,9 +73,32 @@ final class Store implements Serializable {
         }
     }
 
+    static final class Notification implements Serializable {
+        private static final long serialVersionUID = 1L;
+        final String type;
+        final String actor;
+        final long postId;
+        final String text;
+        final long at = System.currentTimeMillis();
+        boolean read;
+
+        Notification(String type, String actor, long postId, String text) {
+            this.type = type;
+            this.actor = actor;
+            this.postId = postId;
+            this.text = text;
+        }
+
+        boolean matches(String type, String actor, long postId) {
+            return this.type.equals(type) && this.actor.equals(actor) && this.postId == postId;
+        }
+    }
+
     private final Map<String, User> users = new HashMap<>();
     private final TreeMap<Long, Post> posts = new TreeMap<>();
     private final Map<String, String> sessions = new HashMap<>();
+    /** Oldest first, per recipient. Not final: store files written before notifications existed load this as null. */
+    private Map<String, List<Notification>> notifications = new HashMap<>();
     private long nextPostId = 1;
     private transient Path file;
 
@@ -88,6 +113,7 @@ final class Store implements Serializable {
         } else {
             store = new Store();
         }
+        if (store.notifications == null) store.notifications = new HashMap<>();
         store.file = file;
         return store;
     }
@@ -163,11 +189,12 @@ final class Store implements Serializable {
         User them = requireUser(target);
         User me = requireUser(viewer);
         if (on) {
-            me.following.add(target);
+            if (me.following.add(target)) addNotification(target, "follow", viewer, NO_POST, "");
             them.followers.add(viewer);
         } else {
             me.following.remove(target);
             them.followers.remove(viewer);
+            retractNotification(target, "follow", viewer, NO_POST);
         }
         save();
         return userJson(them, viewer);
@@ -250,6 +277,8 @@ final class Store implements Serializable {
         Post post = requirePost(id);
         if (!post.author.equals(viewer)) throw new HttpError(403, "You can only delete your own posts");
         posts.remove(id);
+        List<Notification> inbox = notifications.get(viewer);
+        if (inbox != null) inbox.removeIf(n -> n.postId == id);
         save();
         return post.image;
     }
@@ -257,7 +286,11 @@ final class Store implements Serializable {
     synchronized Map<String, Object> like(long id, String viewer, boolean on) {
         Post post = requirePost(id);
         boolean changed = on ? post.likes.add(viewer) : post.likes.remove(viewer);
-        if (changed) save();
+        if (changed) {
+            if (on) addNotification(post.author, "like", viewer, id, "");
+            else retractNotification(post.author, "like", viewer, id);
+            save();
+        }
         return postJson(post, viewer);
     }
 
@@ -267,8 +300,59 @@ final class Store implements Serializable {
         if (clean.length() > 500) throw new HttpError(400, "Comment can be at most 500 characters");
         Post post = requirePost(id);
         post.comments.add(new Comment(viewer, clean));
+        addNotification(post.author, "comment", viewer, id, clean);
         save();
         return postJson(post, viewer);
+    }
+
+    // ---- notifications ----
+
+    /** The viewer's notifications, newest first. */
+    synchronized List<Map<String, Object>> notifications(String viewer) {
+        List<Notification> newestFirst = new ArrayList<>(notifications.getOrDefault(viewer, List.of()));
+        Collections.reverse(newestFirst);
+        return newestFirst.stream().map(this::notificationJson).collect(Collectors.toList());
+    }
+
+    synchronized Map<String, Object> unreadNotifications(String viewer) {
+        long count = notifications.getOrDefault(viewer, List.of()).stream().filter(n -> !n.read).count();
+        return Json.obj("count", count);
+    }
+
+    synchronized Map<String, Object> markNotificationsRead(String viewer) {
+        boolean changed = false;
+        for (Notification n : notifications.getOrDefault(viewer, List.of())) {
+            changed |= !n.read;
+            n.read = true;
+        }
+        if (changed) save();
+        return Json.obj("ok", true);
+    }
+
+    /** Likes and follows replace any earlier identical one, so toggling can't flood the inbox. */
+    private void addNotification(String recipient, String type, String actor, long postId, String text) {
+        if (recipient.equals(actor)) return;
+        List<Notification> inbox = notifications.computeIfAbsent(recipient, k -> new ArrayList<>());
+        if (!type.equals("comment")) inbox.removeIf(n -> n.matches(type, actor, postId));
+        inbox.add(new Notification(type, actor, postId, text));
+        if (inbox.size() > MAX_NOTIFICATIONS) inbox.remove(0);
+    }
+
+    private void retractNotification(String recipient, String type, String actor, long postId) {
+        List<Notification> inbox = notifications.get(recipient);
+        if (inbox != null) inbox.removeIf(n -> n.matches(type, actor, postId));
+    }
+
+    private Map<String, Object> notificationJson(Notification n) {
+        Post post = posts.get(n.postId);
+        return Json.obj(
+                "type", n.type,
+                "actor", n.actor,
+                "postId", n.postId,
+                "image", post == null ? null : "/images/" + post.image,
+                "text", n.text,
+                "at", n.at,
+                "read", n.read);
     }
 
     // ---- helpers ----
