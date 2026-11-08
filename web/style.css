@@ -61,7 +61,12 @@ button, input, textarea { font: inherit; color: inherit; }
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--border);
 }
-.tabbar a { padding: 10px 18px; color: var(--muted); }
+.tabbar a { position: relative; padding: 10px 18px; color: var(--muted); }
+.unread {
+  position: absolute; top: 2px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px;
+  display: grid; place-items: center; border-radius: 999px;
+  background: var(--accent); color: #fff; font-size: 11px; font-weight: 800;
+}
 .tabbar a.active { color: var(--text); }
 .tabbar svg { width: 26px; height: 26px; }
 
@@ -189,6 +194,12 @@ main { max-width: 520px; margin: 0 auto; }
 .people { background: var(--surface); }
 .person { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
 .person .meta { flex: 1; min-width: 0; }
+.person.unseen { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.activity-text {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; word-break: break-word;
+}
+.thumb { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; }
 
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .tile { position: relative; aspect-ratio: 1; background: var(--border); overflow: hidden; }
