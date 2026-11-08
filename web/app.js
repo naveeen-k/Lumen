@@ -116,6 +116,7 @@ const routes = [
   [/^#\/new$/, renderNew, 'new'],
   [/^#\/me$/, () => { location.replace(`#/u/${state.me.name}`); }, 'me'],
   [/^#\/u\/([a-z0-9_.]+)$/, renderProfile, 'me'],
+  [/^#\/u\/([a-z0-9_.]+)\/(followers|following)$/, renderConnections, 'me'],
   [/^#\/p\/(\d+)$/, renderPost, null],
 ];
 
@@ -329,13 +330,14 @@ function infiniteScroll(container, loadMore) {
 // ---------- feed ----------
 
 function followButton(u, onChange) {
-  const btn = h('button', { class: u.followedByMe ? 'btn secondary' : 'btn' }, u.followedByMe ? 'Following' : 'Follow');
+  const label = () => (u.followedByMe ? 'Following' : u.followsMe ? 'Follow back' : 'Follow');
+  const btn = h('button', { class: u.followedByMe ? 'btn secondary' : 'btn' }, label());
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     try {
       Object.assign(u, await api(`users/${u.name}/follow`, { method: u.followedByMe ? 'DELETE' : 'POST' }));
       btn.className = u.followedByMe ? 'btn secondary' : 'btn';
-      btn.textContent = u.followedByMe ? 'Following' : 'Follow';
+      btn.textContent = label();
       onChange?.(u);
     } catch (e) {
       toast(e.message);
@@ -396,7 +398,7 @@ function personRow(u) {
     avatar(u.name),
     h('a', { href: `#/u/${u.name}`, class: 'meta' },
       h('div', { class: 'name' }, u.name),
-      h('div', { class: 'muted small' }, plural(u.followers, 'follower'))),
+      h('div', { class: 'muted small' }, u.followsMe ? 'Follows you' : plural(u.followers, 'follower'))),
     u.name === state.me.name ? null : followButton(u));
 }
 
@@ -468,14 +470,29 @@ async function renderProfile(name) {
         avatar(u.name, 'lg ring'),
         h('div', { class: 'counts' },
           h('div', null, h('b', null, u.posts.toLocaleString()), h('span', { class: 'muted small' }, 'posts')),
-          h('div', null, followers, h('span', { class: 'muted small' }, 'followers')),
-          h('div', null, h('b', null, u.following.toLocaleString()), h('span', { class: 'muted small' }, 'following')))),
-      h('h2', null, u.name),
+          h('a', { href: `#/u/${u.name}/followers` }, followers, h('span', { class: 'muted small' }, 'followers')),
+          h('a', { href: `#/u/${u.name}/following` }, h('b', null, u.following.toLocaleString()), h('span', { class: 'muted small' }, 'following')))),
+      h('h2', null, u.name, u.followsMe ? h('span', { class: 'follows-you' }, 'Follows you') : null),
       bio,
       h('div', { class: 'profile-actions' }, actions)),
     u.photos.length ? grid(u.photos) : h('div', { class: 'empty' },
       h('h2', null, 'No posts yet'),
       isMe ? h('a', { href: '#/new', class: 'btn' }, 'Share your first photo') : null),
+  );
+}
+
+async function renderConnections(name, kind) {
+  const seq = ++renderSeq;
+  loading();
+  const users = await api(`users/${name}/${kind}`);
+  if (seq !== renderSeq) return;
+  const emptyText = kind === 'followers' ? 'No followers yet' : 'Not following anyone yet';
+  mount(
+    h('div', { class: 'list-head' },
+      h('a', { href: `#/u/${name}`, class: 'link-btn' }, name),
+      h('h2', null, kind === 'followers' ? 'Followers' : 'Following')),
+    h('div', { class: 'people' }, users.map(personRow)),
+    users.length ? null : h('p', { class: 'empty muted' }, emptyText),
   );
 }
 

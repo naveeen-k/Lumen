@@ -173,6 +173,15 @@ final class Store implements Serializable {
         return userJson(them, viewer);
     }
 
+    /** The accounts following {@code name}, or the accounts {@code name} follows. */
+    synchronized List<Map<String, Object>> connections(String name, String viewer, boolean followers) {
+        User user = requireUser(name);
+        return (followers ? user.followers : user.following).stream()
+                .map(users::get)
+                .map(u -> userJson(u, viewer))
+                .collect(Collectors.toList());
+    }
+
     synchronized List<Map<String, Object>> search(String query, String viewer) {
         String q = normalize(query);
         if (q.isEmpty()) return List.of();
@@ -296,7 +305,8 @@ final class Store implements Serializable {
                 "posts", postCount,
                 "followers", u.followers.size(),
                 "following", u.following.size(),
-                "followedByMe", viewer != null && u.followers.contains(viewer));
+                "followedByMe", viewer != null && u.followers.contains(viewer),
+                "followsMe", viewer != null && u.following.contains(viewer));
     }
 
     private Map<String, Object> postJson(Post p, String viewer) {
